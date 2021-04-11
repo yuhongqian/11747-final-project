@@ -7,12 +7,13 @@ import argparse
 from data import MutualDataset, mutual_collate
 from torch.utils.data import DataLoader
 from runner import Trainer
-from transformers import ElectraTokenizer, ElectraForSequenceClassification
+from transformers import ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", default="../MuTual/data/mutual")
+    parser.add_argument("--model_name")
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--weight_decay", type=float, default=0)
     parser.add_argument("--epochs", type=int, default=8)
@@ -25,7 +26,7 @@ def parse_args():
     parser.add_argument("--eval_steps", type=int, default=100)
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--ngpus", type=int, default=1, help="Number of gpus to use for distributed training.")
-    parser.add_argument("--output_dir", default="electra")
+    parser.add_argument("--output_dir", default="ckpts")
     return parser.parse_args()
 
 
@@ -41,8 +42,9 @@ def main():
     set_seed(args.seed)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s :: %(levelname)s :: %(message)s')
 
-    tokenizer = ElectraTokenizer.from_pretrained('google/electra-small-discriminator')
-    model = ElectraForSequenceClassification.from_pretrained('google/electra-small-discriminator')
+    config = ElectraConfig.from_pretrained(args.model_name, num_labels=1)   # 1 label for regression
+    tokenizer = ElectraTokenizer.from_pretrained(args.model_name, do_lower_case=True)
+    model = ElectraForSequenceClassification.from_pretrained(args.model_name, config=config)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
@@ -52,9 +54,10 @@ def main():
     # TODO: add test_dataset if we want to submit to leaderboard
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True, num_workers=8,
-                                  collate_fn=mutual_collate(mode="train")) if train_dataset is not None else None
+                                  collate_fn=mutual_collate) if train_dataset is not None else None
+    # currently eval_batch_size = train_batch_size
     dev_dataloader = DataLoader(dev_dataset, batch_size=args.train_batch_size, shuffle=False, num_workers=8,
-                                collate_fn=mutual_collate(mode="dev")) if dev_dataset is not None else None
+                                collate_fn=mutual_collate) if dev_dataset is not None else None
 
     if args.train:
         logging.info("Start training...")

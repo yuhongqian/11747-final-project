@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from torch.optim import Adam
 from torch.utils.tensorboard import SummaryWriter
-
+import pdb
 
 class Trainer:
     def __init__(self, args, model, device, train_dataloader, dev_dataloader):
@@ -19,7 +19,7 @@ class Trainer:
 
     def train(self):
         self.model.train()
-        writer = SummaryWriter()
+        writer = SummaryWriter(log_dir=os.path.join(self.args.output_dir, "runs"))
         optimizer = Adam(params=self.model.parameters(), lr=self.args.lr, eps=1e-8, weight_decay=self.args.weight_decay)
         global_step = 0
         best_eval_loss = None
@@ -50,11 +50,11 @@ class Trainer:
                 torch.cuda.empty_cache()
 
                 # do eval
-                if self.args.eval and (step + 1) % self.args.eval_steps == 0:
+                if self.args.eval and (step + 1) % self.args.eval_steps == 0 or step == len(self.train_dataloader):
                     eval_loss = self.eval()
                     train_loss /= self.args.eval_steps
                     if best_eval_loss is None or eval_loss < best_eval_loss:
-                        logging.info(f"Saving model with eval_loss = {best_eval_loss}...\n")
+                        logging.info(f"Saving model with eval_loss = {eval_loss}...\n")
                         torch.save({
                             "epoch": epoch,
                             "step": step,
@@ -77,7 +77,7 @@ class Trainer:
         eval_loss = 0
         num_batches = 0
         with torch.no_grad():
-            for step, example in tqdm(enumerate(self.train_dataloader), desc="Eval"):
+            for step, example in tqdm(enumerate(self.dev_dataloader), desc="Eval"):
                 input_ids, token_type_ids, attention_mask, labels = example
                 input_ids = input_ids.to(self.device)
                 token_type_ids = token_type_ids.to(self.device)
@@ -91,4 +91,4 @@ class Trainer:
                 num_batches += 1
                 del input_ids, token_type_ids, attention_mask, labels
                 torch.cuda.empty_cache()
-        return eval_loss
+        return eval_loss / len(self.dev_dataloader)

@@ -22,7 +22,7 @@ def load_data(mode_dir, mode, tokenizer):
         else:
             with open(json_file, "r") as f:
                 raw_data = json.load(f)
-        return get_tokenized_data(raw_data, tokenizer, tokenized_file)
+        return get_tokenized_data(raw_data, tokenizer, tokenized_file, mode)
     else:
         with open(tokenized_file, "rb") as f:
             return pickle.load(f)
@@ -42,7 +42,7 @@ def convert_dir_to_json(mode_dir, json_path):
     return raw_data
 
 
-def get_tokenized_data(raw_data, tokenizer, tokenized_file):
+def get_tokenized_data(raw_data, tokenizer, tokenized_file, mode):
     tokenized_data = []
     for data_id, raw_example in raw_data.items():
         answer = ANSWER_IDX[raw_example["answers"]]
@@ -51,10 +51,13 @@ def get_tokenized_data(raw_data, tokenizer, tokenized_file):
             curr_example["id"] = raw_example["id"]
             curr_example["answer"] = answer
             curr_example["option_id"] = idx
-            curr_example["label"] = 1.0 if idx == answer else 0.0   # float for MSE loss
+            if mode == "test":
+                curr_example["label"] = None
+            else:
+                curr_example["label"] = torch.tensor(1.0) if idx == answer else torch.tensor(0.0)   # float for MSE loss
             # dialog history is put first, following electra-dapo paper
-            tokenized = tokenizer(text=raw_example["article"], text_pair=option,
-                                                  truncation="only_first", max_length=512, return_tensors="pt")
+            tokenized = tokenizer(text=raw_example["article"], text_pair=option, padding="max_length",
+                                  truncation="only_first", max_length=512, return_tensors="pt")
             curr_example["input_ids"] = tokenized["input_ids"]
             curr_example["token_type_ids"] = tokenized["token_type_ids"]
             curr_example["attention_mask"] = tokenized["attention_mask"]
@@ -64,11 +67,12 @@ def get_tokenized_data(raw_data, tokenizer, tokenized_file):
     return tokenized_data
 
 
-def mutual_collate(batch, mode):
-    input_ids = torch.tensor([example["input_ids"] for example in batch], dtype=torch.long)
-    token_type_ids = torch.tensor([example["token_type_ids"] for example in batch], dtype=torch.long)
-    attention_mask = torch.tensor([example["attention_mask"] for example in batch], dtype=torch.long)
-    labels = torch.tensor([example["label"] for example in batch], dtype=torch.float) if mode != "test" else None
+def mutual_collate(batch):
+    input_ids = torch.stack([example["input_ids"] for example in batch]).squeeze()
+    token_type_ids = torch.stack([example["token_type_ids"] for example in batch]).squeeze()
+    attention_mask = torch.stack([example["attention_mask"] for example in batch]).squeeze()
+    labels = torch.stack([example["label"] for example in batch]).unsqueeze(dim=1) \
+        if batch[0]["label"] is not None else None
     return input_ids, token_type_ids, attention_mask, labels
 
 
