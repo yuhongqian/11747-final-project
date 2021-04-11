@@ -24,7 +24,8 @@ def load_data(mode_dir, mode, tokenizer):
                 raw_data = json.load(f)
         return get_tokenized_data(raw_data, tokenizer, tokenized_file)
     else:
-        return json.load(tokenized_file)
+        with open(tokenized_file, "rb") as f:
+            return pickle.load(f)
 
 
 def convert_dir_to_json(mode_dir, json_path):
@@ -63,9 +64,17 @@ def get_tokenized_data(raw_data, tokenizer, tokenized_file):
     return tokenized_data
 
 
+def mutual_collate(batch, mode):
+    input_ids = torch.tensor([example["input_ids"] for example in batch], dtype=torch.long)
+    token_type_ids = torch.tensor([example["token_type_ids"] for example in batch], dtype=torch.long)
+    attention_mask = torch.tensor([example["attention_mask"] for example in batch], dtype=torch.long)
+    labels = torch.tensor([example["label"] for example in batch], dtype=torch.float) if mode != "test" else None
+    return input_ids, token_type_ids, attention_mask, labels
+
+
 class MutualDataset(Dataset):
     def __init__(self, data_dir, mode, tokenizer):
-        if mode not in {"dev", "test", "train"}:
+        if mode not in {"train", "dev", "test"}:
             raise ValueError("Incorrect dataset mode.")
 
         mode_dir = os.path.join(data_dir, mode)
@@ -77,3 +86,4 @@ class MutualDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
+
