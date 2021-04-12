@@ -14,6 +14,7 @@ import random
 from collections import Counter
 import nltk
 from nltk import trigrams
+import pdb
 
 
 def split_conversation(conversation):
@@ -43,7 +44,7 @@ def write_daily_dialog(fp, data_path="/bos/tmp10/hongqiay/dailydialog/dialogues_
     seperator = "__eou__"
     with open(data_path, "r") as fin:
         for l in fin:
-            conversation = [s.strip() for s in l.split(seperator) if s.strip() != ""]
+            conversation = [s.strip().lower() for s in l.split(seperator) if s.strip() != ""]
             write_conversation(fp, conversation)
 
 
@@ -55,15 +56,15 @@ def write_persona_chat(fp, data_path="/bos/tmp10/hongqiay/personachat/train_none
             if u1.startswith("1"):
                 write_conversation(fp, curr_conv)
                 curr_conv = []
-            curr_conv.append(u1[1:])    # remove the turn number
-            curr_conv.append(u2)
+            curr_conv.append(u1[1:].lower())    # remove the turn number
+            curr_conv.append(u2.lower())
 
 
 def write_topical_chat(fp, data_path="/bos/tmp10/hongqiay/Topical-Chat/conversations/train.json"):
     with open(data_path, "r") as fin:
         all_data = json.load(fin)
         for example_id, example in all_data.items():
-            conversation = [content["message"] for content in example["content"]]
+            conversation = [content["message"].lower() for content in example["content"]]
             write_conversation(fp, conversation)
 
 
@@ -71,19 +72,23 @@ def write_blendedskill(fp, data_path="/bos/tmp10/hongqiay/blendedskill/train.jso
     with open(data_path, "r") as fin:
         all_data = json.load(fin)
         for example in all_data:
-            conversation = [example["free_turker_utterance"], example["guided_turker_utterance"]]
-            conversation.extend([turn[1] for turn in example["dialog"]])
+            conversation = [example["free_turker_utterance"].lower(), example["guided_turker_utterance"].lower()]
+            conversation.extend([turn[1].lower() for turn in example["dialog"]])
             write_conversation(fp, conversation)
 
 
 def write_individual():
     with open("/bos/tmp10/hongqiay/mutual_pretrain/individual/dailydialog.txt", "w") as f:
+        print("Writing dailydialog...")
         write_daily_dialog(f)
     with open("/bos/tmp10/hongqiay/mutual_pretrain/individual/personachat.txt", "w") as f:
+        print("Writing personachat...")
         write_persona_chat(f)
     with open("/bos/tmp10/hongqiay/mutual_pretrain/individual/topicalchat.txt", "w") as f:
+        print("Writing topicalchat...")
         write_topical_chat(f)
     with open("/bos/tmp10/hongqiay/mutual_pretrain/individual/blendedskill.txt", "w") as f:
+        print("Writing blendedskill...")
         write_blendedskill(f)
 
 
@@ -138,12 +143,13 @@ def nidf(ngram_count, num_convs, min_idf, max_idf):
     return (idf - min_idf) / (max_idf - min_idf)
 
 
-def get_all_positive_conversations(fp, individual_dir="/bos/tmp10/hongqiay/mutual_pretrain/individual"):
+def get_all_positive_conversations(individual_dir="/bos/tmp10/hongqiay/mutual_pretrain/individual"):
     """
-    Gathers and writes all positive conversations. Counts the trigram document frequency.
+    Gathers and all positive conversations. Counts the trigram document frequency.
     :param individual_dir:
     :return:
     """
+    print("Gathering positive conversations...")
     all_positive_conversations = []
     ngram_counts = Counter()
     for fname in os.listdir(individual_dir):
@@ -151,26 +157,27 @@ def get_all_positive_conversations(fp, individual_dir="/bos/tmp10/hongqiay/mutua
             for l in f:
                 conversation = json.loads(l)
                 conversation_text = "".join(conversation)
+                if conversation_text == "":
+                    continue
                 tokens = nltk.word_tokenize(conversation_text)
                 tri_tokens = trigrams(tokens)
                 for trigram in set(tri_tokens):
                     ngram_counts[trigram] += 1
                 all_positive_conversations.append(conversation)
-    min_count = ngram_counts[min(ngram_counts)]
-    min_idf = math.log2(len(all_positive_conversations) / min_count)
-    max_count = ngram_counts[max(ngram_counts)]
-    max_idf = math.log2(len(all_positive_conversations) / max_count)
-    for k, v in ngram_counts:
+    min_count = ngram_counts.most_common()[-1][1]
+    max_count = ngram_counts.most_common()[0][1]
+    min_idf = math.log2(len(all_positive_conversations) / max_count)
+    max_idf = math.log2(len(all_positive_conversations) / min_count)
+    for k, v in ngram_counts.items():
         ngram_counts[k] = nidf(v, len(all_positive_conversations), min_idf, max_idf)    # now stores nidf
     return all_positive_conversations, ngram_counts
 
 
-def get_all_negative_conversations(fp, all_positive_conversations):
-    for pos_conv in all_positive_conversations:
-        write_conversation_pretrain(fp, utterance_order(pos_conv), 0)
-        write_conversation_pretrain(fp, utterance_insert(pos_conv), 0)
-        replace_utterance = random.choice(random.choice(all_positive_conversations))
-        write_conversation_pretrain(fp, utterance_replace(pos_conv, replace_utterance), 0)
+def get_negative_conversations(fp, pos_conv, all_positive_conversations):
+    write_conversation_pretrain(fp, utterance_order(pos_conv), 0)
+    write_conversation_pretrain(fp, utterance_insert(pos_conv), 0)
+    replace_utterance = random.choice(random.choice(all_positive_conversations))
+    write_conversation_pretrain(fp, utterance_replace(pos_conv, replace_utterance), 0)
 
 
 def get_positive_score(conversation, nidfs):
@@ -182,23 +189,32 @@ def get_positive_score(conversation, nidfs):
     for trigram in tri_tokens:
         num_trigrams += 1
         score += nidfs[trigram]
-    return score / num_trigrams
+    if num_trigrams > 0:
+        score /= num_trigrams
+        return score / num_trigrams
+    else:
+        print("num_trigrams == 0 for: ")
+        print(conversation)
+    return score
 
 
 def get_pretrain_dataset(output_path="/bos/tmp10/hongqiay/mutual_pretrain/pretrain_data.txt"):
     with open(output_path, "w") as f:
-        all_positive_conversations, nidfs = get_all_positive_conversations(f)
+        all_positive_conversations, nidfs = get_all_positive_conversations()
+        print("Writing data...")
         for conversation in all_positive_conversations:
             pos_score = get_positive_score(conversation, nidfs)
             write_conversation_pretrain(f, conversation, round(pos_score, 4))
-            get_all_negative_conversations(f, all_positive_conversations)
+            get_negative_conversations(f, conversation, all_positive_conversations)
 
 
 def main():
     seed = 42
     random.seed(seed)
+    # write_individual()
     get_pretrain_dataset()
 
 
 if __name__ == '__main__':
     main()
+

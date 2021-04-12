@@ -7,4 +7,4 @@
 #SBATCH --mail-type=END
 
 source activate cast
-python get_pretrain_data.py
+python -u get_pretrain_data.py
