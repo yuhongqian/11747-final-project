@@ -85,7 +85,6 @@ class MutualDataset(Dataset):
         self.data = load_data(mode_dir, mode, tokenizer)
 
     def __getitem__(self, item):
-        # TODO tokenize data here
         return self.data[item]
 
     def __len__(self):
