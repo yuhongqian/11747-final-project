@@ -8,7 +8,7 @@
 #SBATCH -p gpu
 #SBATCH --gres=gpu:1  # use 1 gpu
 
-size="large"
+size="small"
 source activate cast
 python main.py  \
   --train  \
@@ -16,4 +16,5 @@ python main.py  \
   --train_batch_size 2  \
   --grad_accumulation_steps 32  \
   --model_name "google/electra-${size}-discriminator"  \
-  --output_dir "electra-${size}-ckpts"
+  --output_dir "electra-${size}-ckpts-1ksteps"  \
+  --eval_steps 1000

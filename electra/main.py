@@ -6,7 +6,7 @@ import numpy as np
 import argparse
 from data import MutualDataset, mutual_collate
 from torch.utils.data import DataLoader
-from runner import Trainer
+from runner import Trainer, Tester
 from transformers import ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification
 
 
@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--ngpus", type=int, default=1, help="Number of gpus to use for distributed training.")
     parser.add_argument("--output_dir", default="ckpts")
+    parser.add_argument("--local_model_path", default=None, type=str)
     return parser.parse_args()
 
 
@@ -43,14 +44,19 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s :: %(levelname)s :: %(message)s')
 
     config = ElectraConfig.from_pretrained(args.model_name, num_labels=1)   # 1 label for regression
-    tokenizer = ElectraTokenizer.from_pretrained(args.model_name, do_lower_case=True)
     model = ElectraForSequenceClassification.from_pretrained(args.model_name, config=config)
+
+    if args.local_model_path is not None:
+        state_dicts = torch.load(args.local_model_path)
+        model.load_state_dict(state_dicts["model"])
+
+    tokenizer = ElectraTokenizer.from_pretrained(args.model_name, do_lower_case=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
     # TODO enable multi-gpu training if necessary
     train_dataset = MutualDataset(args.data_dir, "train", tokenizer) if args.train else None
-    dev_dataset = MutualDataset(args.data_dir, "dev", tokenizer) if args.eval else None
+    dev_dataset = MutualDataset(args.data_dir, "dev", tokenizer) if args.eval or args.test else None
     # TODO: add test_dataset if we want to submit to leaderboard
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True, num_workers=8,
@@ -63,6 +69,13 @@ def main():
         logging.info("Start training...")
         trainer = Trainer(args, model, device, train_dataloader, dev_dataloader)
         trainer.train()
+
+    # TODO: currently testing is on the dev set
+    if args.test:
+        logging.info("Start testing...")
+        tester = Tester(args, model, device, dev_dataset, dev_dataloader)
+        tester.test()
+
 
 
 if __name__ == '__main__':
