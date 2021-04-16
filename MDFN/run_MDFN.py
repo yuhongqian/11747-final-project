@@ -258,8 +258,8 @@ class MuTualProcessor(DataProcessor):
         """See base class."""
         logger.info("LOOKING AT {} dev".format(data_dir))
         file = os.path.join(data_dir, 'dev')
-        filenames, file = self._read_txt(file)
-        return filenames, self._create_examples(file, 'dev')
+        file = self._read_txt(file)
+        return self._create_examples(file, 'dev')
 
     def get_test_examples(self, data_dir):
         """See base class."""
@@ -275,14 +275,12 @@ class MuTualProcessor(DataProcessor):
     def _read_txt(self, input_dir):
         lines = []
         files = glob.glob(input_dir + "/*txt")
-        filename_order = []
         for file in tqdm(files, desc="read files"):
-            filename_order.append(file)
             with open(file, 'r', encoding='utf-8') as fin:
                 data_raw = json.load(fin)
                 data_raw["id"] = file
                 lines.append(data_raw)
-        return filename_order, lines
+        return lines
 
 
     def _create_examples(self, lines, set_type):
@@ -896,7 +894,7 @@ def main():
         else:
             train_sampler = DistributedSampler(train_data)
         train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
-    
+
         eval_examples = processor.get_dev_examples(args.data_dir)
         cached_train_features_file = args.data_dir + '_{0}_{1}_{2}_{3}_{4}_{5}'.format(
             list(filter(None, args.model_name_or_path.split('/'))).pop(), "valid",str(args.task_name), str(args.max_seq_length),
