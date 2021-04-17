@@ -11,11 +11,11 @@
 size="large"
 epoch=2
 global_step=37352
-source activate cast
-CUDA_VISIBLE_DEVICES=3, python main.py  \
+dataset="mutual"
+python main.py  \
   --test  \
-  --data_dir "../MuTual/data/mutual_plus"   \
+  --data_dir "../MuTual/data/${dataset}"   \
   --train_batch_size 16  \
   --model_name  "google/electra-${size}-discriminator"   \
   --local_model_path "mutual-plus-electra-${size}-ckpts/epoch${epoch}_global-step${global_step}"  \
-  --output_dir "mutual-plus-electra-${size}-ckpts/epoch${epoch}_global-step${global_step}_output_full"  \
+  --output_dir "mutual-plus-electra-${size}-ckpts/epoch${epoch}_global-step${global_step}_output"  \

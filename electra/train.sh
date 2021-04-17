@@ -9,7 +9,7 @@
 #SBATCH --gres=gpu:1  # use 1 gpu
 
 size="large"
-source activate cast
+dataset="mutual"
 python main.py  \
   --train  \
   --eval   \
