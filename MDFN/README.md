@@ -1,6 +1,9 @@
 Codes accompanying the paper [Filling the Gap of Utterance-aware and Speaker-aware Representation for Multi-turn Dialogue](https://arxiv.org/pdf/2009.06504.pdf)
 
 ## Instruction
+To run MDFN, first unzip mutual.zip in the datasets folder, then follow the README instructions in the MDFN directory from the MDFN authors for necessary packages. To replicate our results, simply run nour_run.sh.
+
+
 Our code is compatible with compatible with python 3.x so for all commands listed below python is `python3`.
 
 We strongly suggest you to use `conda` to control the virtual environment.
