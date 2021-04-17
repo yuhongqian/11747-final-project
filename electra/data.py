@@ -13,21 +13,6 @@ ANSWER_IDX = {
 }
 
 
-def load_data(mode_dir, mode, tokenizer):
-    tokenized_file = os.path.join(mode_dir, f"{mode}.tokenized.pkl")
-    if not os.path.exists(tokenized_file):
-        json_file = os.path.join(mode_dir, f"{mode}.json")
-        if not os.path.exists(json_file):
-            raw_data = convert_dir_to_json(mode_dir, json_file)
-        else:
-            with open(json_file, "r") as f:
-                raw_data = json.load(f)
-        return get_tokenized_data(raw_data, tokenizer, tokenized_file, mode)
-    else:
-        with open(tokenized_file, "rb") as f:
-            return pickle.load(f)
-
-
 def convert_dir_to_json(mode_dir, json_path):
     raw_data = dict()   # "id" -> raw_data
     with open(json_path, "w") as fout:
@@ -42,29 +27,62 @@ def convert_dir_to_json(mode_dir, json_path):
     return raw_data
 
 
-def get_tokenized_data(raw_data, tokenizer, tokenized_file, mode):
-    tokenized_data = []
-    for data_id, raw_example in raw_data.items():
-        answer = ANSWER_IDX[raw_example["answers"]]
-        for idx, option in enumerate(raw_example["options"]):
-            curr_example = dict()
-            curr_example["id"] = raw_example["id"]
-            curr_example["answer"] = answer
-            curr_example["option_id"] = idx
-            if mode == "test":
-                curr_example["label"] = None
+class MutualDataset(Dataset):
+    def __init__(self, data_dir, mode, tokenizer):
+        if mode not in {"train", "dev", "test"}:
+            raise ValueError("Incorrect dataset mode.")
+
+        self.mode = mode
+        self.mode_dir = os.path.join(data_dir, mode)
+        self.tokenizer = tokenizer
+        self.data = self.load_data()
+
+    def __getitem__(self, item):
+        return self.data[item]
+
+    def __len__(self):
+        return len(self.data)
+
+    def load_data(self):
+        mode_dir, mode, tokenizer = self.mode_dir, self.mode, self.tokenizer
+        tokenized_file = os.path.join(mode_dir, f"{mode}.tokenized.pkl")
+        if not os.path.exists(tokenized_file):
+            json_file = os.path.join(mode_dir, f"{mode}.json")
+            if not os.path.exists(json_file):
+                raw_data = convert_dir_to_json(mode_dir, json_file)
             else:
-                curr_example["label"] = torch.tensor(1.0) if idx == answer else torch.tensor(0.0)   # float for MSE loss
-            # dialog history is put first, following electra-dapo paper
-            tokenized = tokenizer(text=raw_example["article"], text_pair=option, padding="max_length",
-                                  truncation="only_first", max_length=512, return_tensors="pt")
-            curr_example["input_ids"] = tokenized["input_ids"]
-            curr_example["token_type_ids"] = tokenized["token_type_ids"]
-            curr_example["attention_mask"] = tokenized["attention_mask"]
-            tokenized_data.append(curr_example)
-    with open(tokenized_file, "wb") as f:
-        pickle.dump(tokenized_data, f)
-    return tokenized_data
+                with open(json_file, "r") as f:
+                    raw_data = json.load(f)
+            return self.get_tokenized_data(raw_data, tokenized_file)
+        else:
+            with open(tokenized_file, "rb") as f:
+                return pickle.load(f)
+
+    def get_tokenized_data(self, raw_data, tokenized_file):
+        tokenizer, mode = self.tokenizer, self.mode
+        tokenized_data = []
+        for data_id, raw_example in raw_data.items():
+            answer = ANSWER_IDX[raw_example["answers"]]
+            for idx, option in enumerate(raw_example["options"]):
+                curr_example = dict()
+                curr_example["id"] = raw_example["id"]
+                curr_example["answer"] = answer
+                curr_example["option_id"] = idx
+                if mode == "test":
+                    curr_example["label"] = None
+                else:
+                    curr_example["label"] = torch.tensor(1.0) if idx == answer else torch.tensor(
+                        0.0)  # float for MSE loss
+                # dialog history is put first, following electra-dapo paper
+                tokenized = tokenizer(text=raw_example["article"], text_pair=option, padding="max_length",
+                                      truncation="only_first", max_length=512, return_tensors="pt")
+                curr_example["input_ids"] = tokenized["input_ids"]
+                curr_example["token_type_ids"] = tokenized["token_type_ids"]
+                curr_example["attention_mask"] = tokenized["attention_mask"]
+                tokenized_data.append(curr_example)
+        with open(tokenized_file, "wb") as f:
+            pickle.dump(tokenized_data, f)
+        return tokenized_data
 
 
 def mutual_collate(batch):
@@ -76,17 +94,44 @@ def mutual_collate(batch):
     return input_ids, token_type_ids, attention_mask, labels
 
 
-class MutualDataset(Dataset):
+class DapoDataset(Dataset):
     def __init__(self, data_dir, mode, tokenizer):
-        if mode not in {"train", "dev", "test"}:
+        if mode not in {"train", "dev"}:
             raise ValueError("Incorrect dataset mode.")
-
-        mode_dir = os.path.join(data_dir, mode)
-        self.data = load_data(mode_dir, mode, tokenizer)
+        self.data_dir = data_dir
+        self.mode = mode
+        self.tokenizer = tokenizer
+        self.data = self.load_data()
 
     def __getitem__(self, item):
         return self.data[item]
 
     def __len__(self):
         return len(self.data)
+
+    def load_data(self):
+        data_dir, mode, tokenizer = self.data_dir, self.mode, self.tokenizer
+        tokenized_file = os.path.join(data_dir, f"{mode}.tokenized.pkl")
+        if not os.path.exists(tokenized_file):
+            data = []
+            with open(os.path.join(data_dir, f"pretrain_{mode}.txt"), "r") as f:
+                for l in f:
+                    curr_example = json.loads(l)
+                    tokenized = tokenizer(text=curr_example["conversation"], padding="max_length",
+                                          truncation=True, max_length=512, return_tensors="pt")
+                    curr_example["input_ids"] = tokenized["input_ids"]
+                    curr_example["token_type_ids"] = tokenized["token_type_ids"]
+                    curr_example["attention_mask"] = tokenized["attention_mask"]
+                    curr_example["label"] = torch.tensor(curr_example["label"], dtype=torch.float32)
+                    data.append(curr_example)
+            with open(tokenized_file, "wb") as f:
+                pickle.dump(data, f)
+        else:
+            with open(tokenized_file, "rb") as f:
+                data = pickle.load(f)
+        return data
+
+
+def dapo_collate(batch):
+    return mutual_collate(batch)
 

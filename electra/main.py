@@ -4,7 +4,7 @@ import random
 import logging
 import numpy as np
 import argparse
-from data import MutualDataset, mutual_collate
+from data import MutualDataset, mutual_collate, DapoDataset, dapo_collate
 from torch.utils.data import DataLoader
 from runner import Trainer, Tester
 from transformers import ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification
@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=8)
     parser.add_argument("--train_batch_size", type=int)
     parser.add_argument("--test_batch_size", type=int)
+    parser.add_argument("--pretrain", action="store_true")
     parser.add_argument("--train", action="store_true")
     parser.add_argument("--eval", action="store_true")
     parser.add_argument("--test", action="store_true")
@@ -55,15 +56,30 @@ def main():
     model.to(device)
 
     # TODO enable multi-gpu training if necessary
+    pretrain_train_dataset = DapoDataset(args.data_dir, "train", tokenizer) if args.pretrain else None
+    pretrain_dev_dataset = DapoDataset(args.data_dir, "dev", tokenizer) if args.pretrain else None
     train_dataset = MutualDataset(args.data_dir, "train", tokenizer) if args.train else None
     dev_dataset = MutualDataset(args.data_dir, "dev", tokenizer) if args.eval or args.test else None
     # TODO: add test_dataset if we want to submit to leaderboard
 
+    pretrain_train_dataloader = DataLoader(pretrain_train_dataset, batch_size=args.train_batch_size,
+                                           shuffle=True, num_workers=8,
+                                           collate_fn=dapo_collate) if pretrain_train_dataset is not None else None
+    pretrain_dev_dataloader = DataLoader(pretrain_dev_dataset, batch_size=args.train_batch_size,
+                                           shuffle=False, num_workers=8,
+                                           collate_fn=dapo_collate) if pretrain_dev_dataset is not None else None
     train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True, num_workers=8,
                                   collate_fn=mutual_collate) if train_dataset is not None else None
     # currently eval_batch_size = train_batch_size
     dev_dataloader = DataLoader(dev_dataset, batch_size=args.train_batch_size, shuffle=False, num_workers=8,
                                 collate_fn=mutual_collate) if dev_dataset is not None else None
+
+    if args.pretrain:
+        logging.info("Start pretraining...")
+        args.eval = True
+        trainer = Trainer(args, model, device, pretrain_train_dataloader, pretrain_dev_dataloader)
+        trainer.train()
+        return  # fine-tuning should be done separately
 
     if args.train:
         logging.info("Start training...")

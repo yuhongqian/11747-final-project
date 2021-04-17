@@ -8,13 +8,14 @@
 #SBATCH -p gpu
 #SBATCH --gres=gpu:1  # use 1 gpu
 
-size="small"
-epoch=6
-global_step=11932
+size="large"
+epoch=2
+global_step=37352
 source activate cast
-CUDA_VISIBLE_DEVICES=0, python main.py  \
+CUDA_VISIBLE_DEVICES=3, python main.py  \
   --test  \
+  --data_dir "../MuTual/data/mutual_plus"   \
   --train_batch_size 16  \
   --model_name  "google/electra-${size}-discriminator"   \
   --local_model_path "mutual-plus-electra-${size}-ckpts/epoch${epoch}_global-step${global_step}"  \
-  --output_dir "mutual-plus-electra-${size}-ckpts/epoch${epoch}_global-step${global_step}_outputs"  \
+  --output_dir "mutual-plus-electra-${size}-ckpts/epoch${epoch}_global-step${global_step}_output_full"  \

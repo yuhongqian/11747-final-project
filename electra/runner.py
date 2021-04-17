@@ -139,6 +139,12 @@ class Tester:
                     curr_scores = []
                 curr_scores.append((all_scores[i][0], example["option_id"]))
                 prev_id = curr_id
+            curr_scores.sort(reverse=True)
+            row = [prev_id]
+            answers = [IDX_TO_ANSWER[option_id] for (_, option_id) in curr_scores]
+            answers_w_scores = [(IDX_TO_ANSWER[option_id], score) for (score, option_id) in curr_scores]
+            writer1.writerow(row + answers)
+            writer2.writerow(row + answers_w_scores)
 
 
 
