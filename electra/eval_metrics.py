@@ -2,7 +2,7 @@ import sys
 import json
 
 
-def calculate_metrics(output_txt, json_data_path="../MuTual/data/mutual_plus/dev/dev.json"):
+def calculate_metrics(output_txt, json_data_path="../MuTual/data/mutual/dev/dev.json"):
     gold = dict()
     with open(json_data_path, "r") as f:
         all_data = json.load(f)
