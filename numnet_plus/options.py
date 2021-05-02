@@ -31,7 +31,9 @@ def add_train_args(parser: ArgumentParser):
 def add_bert_args(parser: ArgumentParser):
     parser.add_argument("--bert_learning_rate", type=float, help="bert learning rate.")
     parser.add_argument("--bert_weight_decay", type=float, help="bert weight decay.")
-    parser.add_argument("--roberta_model", type=str, help="robert modle path.")
+    parser.add_argument("--roberta_model", type=str, default=None, help="robert model path.")
+    parser.add_argument("--electra_model", type=str, default=None, help="electra model path.")
+    parser.add_argument("--model_type", choices=["roberta", "electra"])
 
 def add_model_args(parser: ArgumentParser):
     parser.add_argument("--use_gcn", action="store_true", help="Using graph infomation.")

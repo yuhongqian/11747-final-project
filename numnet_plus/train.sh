@@ -8,6 +8,7 @@ BLR=$3
 WD=$4
 BWD=$5
 TMSPAN=$6
+model_type="electra"
 
 BASE_DIR=.
 
@@ -39,8 +40,9 @@ SAVE_DIR=${BASE_DIR}/numnet_plus_${SEED}_LR_${LR}_BLR_${BLR}_WD_${WD}_BWD_${BWD}
 DATA_CONFIG="--data_dir ${DATA_DIR} --save_dir ${SAVE_DIR}"
 TRAIN_CONFIG="--batch_size 8 --eval_batch_size 5 --max_epoch 5 --warmup 0.06 --optimizer adam \
               --learning_rate ${LR} --weight_decay ${WD} --seed ${SEED} --gradient_accumulation_steps 8 \
-              --bert_learning_rate ${BLR} --bert_weight_decay ${BWD} --log_per_updates 100 --eps 1e-6"
-BERT_CONFIG="--roberta_model ${DATA_DIR}/roberta.large"
+              --bert_learning_rate ${BLR} --bert_weight_decay ${BWD} --log_per_updates 100 --eps 1e-6  \
+              --model_type ${model_type}"
+BERT_CONFIG="--${model_type}_model ${DATA_DIR}/${model_type}.large"
 
 
 echo "Start training..."

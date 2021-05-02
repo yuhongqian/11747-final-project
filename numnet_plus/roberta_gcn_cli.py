@@ -10,7 +10,7 @@ from tag_mspan_robert_gcn.roberta_batch_gen_tmspan import DropBatchGen as TDropB
 from tag_mspan_robert_gcn.tag_mspan_roberta_gcn import NumericallyAugmentedBertNet as TNumericallyAugmentedBertNet
 from datetime import datetime
 from tools.utils import create_logger, set_environment
-from pytorch_transformers import RobertaTokenizer, RobertaModel
+from transformers import RobertaTokenizer, RobertaModel, ElectraTokenizer, ElectraModel
 
 
 parser = argparse.ArgumentParser("Bert training task.")
@@ -50,7 +50,11 @@ def main():
     logger.info("Num update steps {}!".format(num_train_steps))
 
     logger.info("Build bert model.")
-    bert_model = RobertaModel.from_pretrained(args.roberta_model)
+    if args.model_type == "roberta":
+        bert_model = RobertaModel.from_pretrained(args.roberta_model)
+    else:
+        bert_model = ElectraModel.from_pretrained(args.electra_model)
+
 
     logger.info("Build Drop model.")
     if not args.tag_mspan:

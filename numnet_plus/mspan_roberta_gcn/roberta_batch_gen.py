@@ -11,7 +11,7 @@ class DropBatchGen(object):
         self.padding_idx = padding_idx
         self.is_train = data_mode == "train"
         self.vocab_size = len(tokenizer)
-        dpath = "cached_roberta_{}.pkl".format(data_mode)
+        dpath = "cached_{}_{}.pkl".format(args.model_type, data_mode)
         with open(os.path.join(args.data_dir, dpath), "rb") as f:
             print("Load data from {}.".format(dpath))
             data = pickle.load(f)
