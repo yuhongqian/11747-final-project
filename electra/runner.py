@@ -11,6 +11,7 @@ import pdb
 
 IDX_TO_ANSWER = ["A", "B", "C", "D"]
 
+
 class Trainer:
     def __init__(self, args, model, device, train_dataloader, dev_dataloader):
         self.args = args

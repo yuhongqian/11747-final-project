@@ -17,21 +17,21 @@ CODE_DIR=${BASE_DIR}
 
 if [ ${TMSPAN} == tag_mspan ];then
   echo "Use tag_mspan model..."
-  CACHED_TRAIN=${DATA_DIR}/tmspan_cached_roberta_train.pkl
-  CACHED_DEV=${DATA_DIR}/tmspan_cached_roberta_dev.pkl
+  CACHED_TRAIN=${DATA_DIR}/tmspan_cached_${model_type}_train.pkl
+  CACHED_DEV=${DATA_DIR}/tmspan_cached_${model_type}_dev.pkl
   MODEL_CONFIG="--gcn_steps 3 --use_gcn --tag_mspan"
   if [ \( ! -e "${CACHED_TRAIN}" \)  -o \( ! -e "${CACHED_DEV}" \) ]; then
   echo "Preparing cached data."
-  python prepare_roberta_data.py --input_path ${DATA_DIR} --output_dir ${DATA_DIR} --tag_mspan
+  python prepare_roberta_data.py --input_path ${DATA_DIR} --output_dir ${DATA_DIR} --tag_mspan  --model_type ${model_type}
   fi
 else
   echo "Use mspan model..."
-  CACHED_TRAIN=${DATA_DIR}/cached_roberta_train.pkl
-  CACHED_DEV=${DATA_DIR}/cached_roberta_dev.pkl
+  CACHED_TRAIN=${DATA_DIR}/cached_${model_type}_train.pkl
+  CACHED_DEV=${DATA_DIR}/cached_${model_type}_dev.pkl
   MODEL_CONFIG="--gcn_steps 3 --use_gcn"
   if [ \( ! -e "${CACHED_TRAIN}" \)  -o \( ! -e "${CACHED_DEV}" \) ]; then
   echo "Preparing cached data."
-  python prepare_roberta_data.py --input_path ${DATA_DIR} --output_dir ${DATA_DIR}
+  python prepare_roberta_data.py --input_path ${DATA_DIR} --output_dir ${DATA_DIR} --model_type ${model_type}
   fi
 fi
 
@@ -54,7 +54,7 @@ python ${CODE_DIR}/roberta_gcn_cli.py \
 
 echo "Starting evaluation..."
 TEST_CONFIG="--eval_batch_size 5 --pre_path ${SAVE_DIR}/checkpoint_best.pt --data_mode dev --dump_path ${SAVE_DIR}/dev.json \
-             --inf_path ${DATA_DIR}/drop_dataset_dev.json"
+             --inf_path ${DATA_DIR}/drop_dataset_dev.json --model_type ${model_type}"
 
 python ${CODE_DIR}/roberta_predict.py \
     ${DATA_CONFIG} \

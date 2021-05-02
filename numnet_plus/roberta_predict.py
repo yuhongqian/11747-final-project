@@ -26,7 +26,7 @@ print("Build bert model.")
 if args.model_type == "roberta":
     bert_model = RobertaModel(RobertaConfig().from_pretrained(args.roberta_model))
 else:
-    bert_model = ElectraModel(ElectraConfig().from_pretrained(args.roberta_model))
+    bert_model = ElectraModel(ElectraConfig().from_pretrained(args.electra_model))
 print("Build Drop model.")
 if args.tag_mspan:
     network = TNumericallyAugmentedBertNet(bert_model,
@@ -49,7 +49,7 @@ print("Load data from {}.".format(args.inf_path))
 if args.model_type == "roberta":
     tokenizer = RobertaTokenizer.from_pretrained(args.roberta_model)
 else:
-    tokenizer = ElectraTokenizer.from_pretrained(args.roberta_model)
+    tokenizer = ElectraTokenizer.from_pretrained(args.electra_model)
 if args.tag_mspan:
     inf_iter = TDropBatchGen(args, tokenizer,
                             TDropReader(tokenizer, passage_length_limit=463, question_length_limit=46)._read(
