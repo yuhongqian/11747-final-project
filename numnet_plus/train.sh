@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
+#SBATCH -N 1
+#SBATCH -n 1
+#SBATCH --mem=20000 # Memory - Use up to 40G
+#SBATCH --time=0 # No time limit
+#SBATCH --mail-user=hongqiay@andrew.cmu.edu
+#SBATCH --mail-type=END
+#SBATCH --nodelist=boston-2-31
+#SBATCH -p gpu
+#SBATCH --gres=gpu:1
+
+source activate num
 
 set -xe
 
-SEED=$1
-LR=$2
-BLR=$3
-WD=$4
-BWD=$5
-TMSPAN=$6
+SEED=345
+LR=5e-4
+BLR=1.5e-5
+WD=5e-5
+BWD=0.01
+TMSPAN=tag_mspan
 model_type="electra"
 
 BASE_DIR=.

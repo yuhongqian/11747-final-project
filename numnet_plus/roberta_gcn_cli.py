@@ -11,7 +11,7 @@ from tag_mspan_robert_gcn.tag_mspan_roberta_gcn import NumericallyAugmentedBertN
 from datetime import datetime
 from tools.utils import create_logger, set_environment
 from transformers import RobertaTokenizer, RobertaModel, ElectraTokenizer, ElectraModel
-
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser("Bert training task.")
 options.add_bert_args(parser)
@@ -85,13 +85,16 @@ def main():
             train_itr.reset()
         first = False
         logger.info('At epoch {}'.format(epoch))
-        for step, batch in enumerate(train_itr):
+        for step, batch in tqdm(enumerate(train_itr)):
             model.update(batch)
             if model.step % (args.log_per_updates * args.gradient_accumulation_steps) == 0 or model.step == 1:
                 logger.info("Updates[{0:6}] train loss[{1:.5f}] train em[{2:.5f}] f1[{3:.5f}] remaining[{4}]".format(
                     model.updates, model.train_loss.avg, model.em_avg.avg, model.f1_avg.avg,
                     str((datetime.now() - train_start) / (step + 1) * (num_train_steps - step - 1)).split('.')[0]))
                 model.avg_reset()
+            if model.step % 10000 == 0:
+                save_prefix = os.path.join(args.save_dir, f"checkpoint_epoch{epoch}_step{model.step}")
+                model.save(save_prefix, epoch)
         total_num, eval_loss, eval_em, eval_f1 = model.evaluate(dev_itr)
         logger.info(
             "Eval {} examples, result in epoch {}, eval loss {}, eval em {} eval f1 {}.".format(total_num, epoch,

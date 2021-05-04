@@ -169,7 +169,7 @@ class NumericallyAugmentedBertNet(nn.Module):
 
     def forward(self,  # type: ignore
                 input_ids: torch.LongTensor,
-                input_mask: torch.LongTensor,
+                input_mask: torch.BoolTensor,
                 input_segments: torch.LongTensor,
                 passage_mask: torch.LongTensor,
                 question_mask: torch.LongTensor,
@@ -190,7 +190,7 @@ class NumericallyAugmentedBertNet(nn.Module):
 
         outputs = self.bert(input_ids, attention_mask=input_mask, token_type_ids=input_segments)
         sequence_output = outputs[0]
-        sequence_output_list = [ item for item in outputs[2][-4:] ]
+        sequence_output_list = [ item for item in outputs.hidden_states[-4:] ]
 
         batch_size = input_ids.size(0)
         if ("passage_span_extraction" in self.answering_abilities or "question_span" in self.answering_abilities) and self.use_gcn:

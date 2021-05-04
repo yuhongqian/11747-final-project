@@ -71,10 +71,10 @@ class DropBatchGen(object):
 
             # qa input.
             input_ids = torch.LongTensor(bsz, max_seq_len).fill_(self.padding_idx)
-            input_mask = torch.LongTensor(bsz, max_seq_len).fill_(0)
+            input_mask = torch.BoolTensor(bsz, max_seq_len).fill_(0)
             input_segments = torch.LongTensor(bsz, max_seq_len).fill_(0)
-            passage_mask = torch.LongTensor(bsz, max_seq_len).fill_(0)
-            question_mask = torch.LongTensor(bsz, max_seq_len).fill_(0)
+            passage_mask = torch.BoolTensor(bsz, max_seq_len).fill_(0).bool()
+            question_mask = torch.BoolTensor(bsz, max_seq_len).fill_(0).bool()
 
             # number infos
             number_indices = torch.LongTensor(bsz, max_num_len).fill_(-1)
@@ -98,8 +98,8 @@ class DropBatchGen(object):
             max_correct_sequences = max([1] + [0 if len(metas[i]["multi_span"]) < 1 else
                                             len(metas[i]["multi_span"][2])
                                             for i in range(bsz)])
-            is_bio_mask = torch.LongTensor(bsz).fill_(0)
-            bio_wordpiece_mask = torch.LongTensor(bsz, max_seq_len).fill_(0)
+            is_bio_mask = torch.BoolTensor(bsz).fill_(0).bool()
+            bio_wordpiece_mask = torch.BoolTensor(bsz, max_seq_len).fill_(0).bool()
             answer_as_text_to_disjoint_bios = torch.LongTensor(bsz, max_text_answers, max_answer_spans, max_seq_len).fill_(0)
             answer_as_list_of_bios = torch.LongTensor(bsz, max_correct_sequences, max_seq_len).fill_(0)
             span_bio_labels = torch.LongTensor(bsz, max_seq_len).fill_(0)
