@@ -7,7 +7,7 @@ import argparse
 from data import MutualDataset, mutual_collate, DapoDataset, dapo_collate
 from torch.utils.data import DataLoader
 from runner import Trainer, Tester
-from transformers import ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification
+from transformers import BertConfig, BertForSequenceClassification, ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification
 
 
 def parse_args():
@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument("--ngpus", type=int, default=1, help="Number of gpus to use for distributed training.")
     parser.add_argument("--output_dir", default="ckpts")
     parser.add_argument("--local_model_path", default=None, type=str)
+    parser.add_argument("--numnet_model", default=None, type=str)
     return parser.parse_args()
 
 
@@ -47,7 +48,11 @@ def main():
     config = ElectraConfig.from_pretrained(args.model_name, num_labels=1)   # 1 label for regression
     model = ElectraForSequenceClassification.from_pretrained(args.model_name, config=config)
 
-    if args.local_model_path is not None:
+    if args.numnet_model is not None:
+        config = BertConfig.from_pretrained(args.model_name, num_labels=1)  # 1 label for regression
+        model = BertForSequenceClassification.from_pretrained(args.model_name, config=config)
+        model.load_state_dict(torch.load(args.numnet_model), strict=False)
+    elif args.local_model_path is not None:
         state_dicts = torch.load(args.local_model_path)
         model.load_state_dict(state_dicts["model"])
 

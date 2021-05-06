@@ -5,7 +5,7 @@
       <paths name="boston">
         <serverdata>
           <mappings>
-            <mapping deploy="/bos/usr0/hongqiay/mutual" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/bos/usr0/hongqiay/mutual" local="$PROJECT_DIR$/" web="/" />
           </mappings>
         </serverdata>
       </paths>
