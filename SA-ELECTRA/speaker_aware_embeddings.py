@@ -134,9 +134,9 @@ class SpeakerAwareElectraModelForSequenceClassification(ElectraPreTrainedModel):
         pooled_output = self.dropout(pooled_output)
         
         if num_labels > 2:
-            logits = self.classifier(pooled_output)
+            logits = self.classification(pooled_output)
         else:
-            logits = self.classifier2(pooled_output)
+            logits = self.regression_output(pooled_output)
 
         reshaped_logits = logits.view(-1, num_labels) if num_labels > 2 else logits
 
