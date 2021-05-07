@@ -19,9 +19,9 @@ python main.py  \
   --train  \
   --eval   \
   --train_batch_size 2  \
-  --grad_accumulation_steps 32  \
+  --grad_accumulation_steps 64  \
   --model_name ${model_name}  \
-  --output_dir "${dataset}-numnet-electra-${size}-ckpts"  \
+  --output_dir "${dataset}-numnet-largebs-electra-${size}-ckpts"  \
   --data_dir "../MuTual/data/${dataset}" \
   --eval_steps 500  \
   --numnet_model "/bos/usr0/hongqiay/numnet_plus/numnet_pmlus_345_LR_5e-4_BLR_1.5e-5_WD_5e-5_BWD_0.01tag_mspan/checkpoint_best.pt"

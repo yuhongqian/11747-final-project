@@ -35,4 +35,5 @@ class SpeakerAwareEmbeddings(ElectraEmbeddings):
         embeddings = inputs_embeds + position_embeddings + token_type_embeddings + speaker_embeddings
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
+
         return embeddings

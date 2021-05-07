@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from torch.optim import Adam
 from torch.utils.tensorboard import SummaryWriter
+from transformers import get_linear_schedule_with_warmup
 import pdb
 
 IDX_TO_ANSWER = ["A", "B", "C", "D"]
@@ -25,6 +26,7 @@ class Trainer:
         self.model.train()
         writer = SummaryWriter(log_dir=os.path.join(self.args.output_dir, "runs"))
         optimizer = Adam(params=self.model.parameters(), lr=self.args.lr, eps=1e-8, weight_decay=self.args.weight_decay)
+        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=5000, num_training_steps=75000)
         global_step = 0
         best_eval_loss = None
         for epoch in tqdm(range(self.args.epochs), desc="Epoch"):
@@ -47,6 +49,7 @@ class Trainer:
                 loss.backward()
                 if (step + 1) % self.args.grad_accumulation_steps == 0:
                     optimizer.step()
+                    scheduler.step()
                     optimizer.zero_grad()
                 train_loss += loss.item()
                 global_step += 1
@@ -65,6 +68,7 @@ class Trainer:
                             "step": step,
                             "global_step": global_step,
                             "optimizer": optimizer.state_dict(),
+                            "scheduler": scheduler.state_dict(),
                             "model": self.model.state_dict(),
                             "train_loss": train_loss,
                             "eval_loss": best_eval_loss
