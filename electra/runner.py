@@ -54,7 +54,8 @@ class Trainer:
                 torch.cuda.empty_cache()
 
                 # do eval
-                if self.args.eval and (step + 1) % self.args.eval_steps == 0 or step == len(self.train_dataloader):
+                if self.args.eval and step % self.args.eval_steps == 0 or step == len(self.train_dataloader):
+                # if self.args.eval and (step + 1) % self.args.eval_steps == 0 or step == len(self.train_dataloader):
                     eval_loss = self.eval()
                     train_loss /= self.args.eval_steps
                     if best_eval_loss is None or eval_loss < best_eval_loss:
@@ -90,6 +91,9 @@ class Trainer:
                 outputs = self.model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
                 logits = outputs.logits
                 scores = F.sigmoid(logits)
+                if step <= 5:
+                    logging.info(f"batch {step} labels = {labels}")
+                    logging.info(f"batch {step} scores = {scores}")
                 loss = self.criterion(scores, labels)
                 eval_loss += loss.item()
                 num_batches += 1

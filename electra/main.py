@@ -51,6 +51,13 @@ def main():
     if args.numnet_model is not None:
         config = BertConfig.from_pretrained(args.model_name, num_labels=1)  # 1 label for regression
         model = BertForSequenceClassification.from_pretrained(args.model_name, config=config)
+        state_dicts = torch.load(args.numnet_model)
+        if "model" in state_dicts:
+            logging.info("Loading in mutual electra format state_dicts.")
+            model.load_state_dict(state_dicts["model"], strict=False)
+        else:
+            logging.info("Loading model weights only.")
+            model.load_state_dict(state_dicts)
         model.load_state_dict(torch.load(args.numnet_model), strict=False)
     elif args.local_model_path is not None:
         state_dicts = torch.load(args.local_model_path)
