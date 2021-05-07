@@ -1,5 +1,14 @@
-from transformers import ElectraTokenizer, ElectraModel
+import os
 import torch
+import random
+import logging
+import numpy as np
+import argparse
+from torch import nn  
+from torch.utils.data import DataLoader
+from transformers import ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification, ElectraPreTrainedModel, ElectraModel
+#from transformers import (ElectraModel, ElectraPreTrainedModel, BertModel, BertPreTrainedModel, RobertaModel)
+
 
 
 
@@ -10,14 +19,17 @@ NOTE: This is untested code, need to debug a few things before training.
 class SpeakerAwareElectraEmbeddings(nn.Module):
     """Construct the embeddings from word, position, token_type embeddings, and speaker positions."""
 
-    def __init__(self, config):
+    def __init__(self, config, num_speakers=2):
         super().__init__()
+
+        self.num_speakers = num_speakers
+
         self.word_embeddings = nn.Embedding(config.vocab_size, config.embedding_size, padding_idx=config.pad_token_id)
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.embedding_size)
         self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.embedding_size)
 
 
-        self.speaker_embeddings = nn.Embedding(config.turn_size, config.embedding_size)   # add embeddings for speaker, how to modify config?
+        self.speaker_embeddings = nn.Embedding(self.num_speakers, config.embedding_size)   # add embeddings for speaker, how to modify config?
 
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
         # any TensorFlow checkpoint file
@@ -30,7 +42,7 @@ class SpeakerAwareElectraEmbeddings(nn.Module):
 
     # Copied from transformers.models.bert.modeling_bert.BertEmbeddings.forward
     def forward(
-        self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, speaker_ids = None, past_key_values_length=0
+        self, input_ids=None, token_type_ids=None, position_ids=None, speaker_ids = None, inputs_embeds=None, past_key_values_length=0
     ):
         if input_ids is not None:
             input_shape = input_ids.size()
@@ -62,87 +74,74 @@ class SpeakerAwareElectraEmbeddings(nn.Module):
         return embeddings
 
 
+# Below model make sure to add a classification layer
+
 class SpeakerAwareElectraModel(ElectraPreTrainedModel):
-    def __init__(self, config):
+    def __init__(self, config, num_speakers=2):
         super().__init__(config)
-        self.embeddings = ElectraEmbeddings(config)
 
-        if config.embedding_size != config.hidden_size:
-            self.embeddings_project = nn.Linear(config.embedding_size, config.hidden_size)
-
-        self.encoder = ElectraEncoder(config)
-        self.config = config
+        self.num_speakers = num_speakers
+        self.electra      = ElectraModel(config)
+        self.embeddings   = SpeakerAwareElectraEmbeddings(config, self.num_speakers)
         self.init_weights()
-
-    def get_input_embeddings(self):
-        return self.embeddings.word_embeddings
-
-    def set_input_embeddings(self, value):
-        self.embeddings.word_embeddings = value
-
-    def _prune_heads(self, heads_to_prune):
-        """
-        Prunes heads of the model. heads_to_prune: dict of {layer_num: list of heads to prune in this layer} See base
-        class PreTrainedModel
-        """
-        for layer, heads in heads_to_prune.items():
-            self.encoder.layer[layer].attention.prune_heads(heads)
 
     def forward(
         self,
         input_ids=None,
-        attention_mask=None,
         token_type_ids=None,
+        attention_mask=None,
+        sep_pos = None,
         position_ids=None,
+        speaker_ids = None,
         head_mask=None,
         inputs_embeds=None,
-        speaker_ids=None,   # add speaker ids into input
+        labels=None,
         output_attentions=None,
         output_hidden_states=None,
-        return_dict=None,
     ):
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        num_labels = input_ids.shape[1] if input_ids is not None else inputs_embeds.shape[1]
 
-        if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
-        elif input_ids is not None:
-            input_shape = input_ids.size()
-        elif inputs_embeds is not None:
-            input_shape = inputs_embeds.size()[:-1]
-        else:
-            raise ValueError("You have to specify either input_ids or inputs_embeds")
+        input_ids = input_ids.view(-1, input_ids.size(-1)) if input_ids is not None else None 
+        attention_mask = attention_mask.view(-1, attention_mask.size(-1)) if attention_mask is not None else None
+        # (batch_size * choice, seq_len)
+        token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1)) if token_type_ids is not None else None
+        sep_pos = sep_pos.view(-1, sep_pos.size(-1)) if sep_pos is not None else None
+        
+        # INCLUDE SPEAKER IDS HERE
+        speaker_ids = speaker_ids.view(-1, speaker_ids.size(-1)) if speaker_ids is not None else None
+        speaker_ids = speaker_ids.unsqueeze(-1).repeat([1,1,speaker_ids.size(1)]) if speaker_ids is not None else None
+        
+        position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
+        inputs_embeds = self.embeddings(input_ids=input_ids, token_type_ids=token_type_ids, position_ids=position_ids, speaker_ids=speaker_ids)
+        print(inputs_embeds)
 
-        device = input_ids.device if input_ids is not None else inputs_embeds.device
 
-        if attention_mask is None:
-            attention_mask = torch.ones(input_shape, device=device)
-        if token_type_ids is None:
-            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
 
-        if speaker_ids is None:     # adding speaker-aware embeddings
-            speaker_ids = torch.zeros(input_shape, dtype=torch.long, device=device)  # adding speaker-aware embeddings
+        attention_mask = attention_mask.unsqueeze(1).unsqueeze(2) # (batch_size * num_choice, 1, 1, seq_len)
+        attention_mask = attention_mask.to(dtype=self.dtype)  # fp16 compatibility
 
-        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape, device)
-        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
+        attention_mask = (1.0 - attention_mask) * -10000.0
 
-        hidden_states = self.embeddings(
-            input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds, speaker_ids=speaker_ids
-        )
-
-        if hasattr(self, "embeddings_project"):
-            hidden_states = self.embeddings_project(hidden_states)
-
-        hidden_states = self.encoder(
-            hidden_states,
-            attention_mask=extended_attention_mask,
+        outputs = self.electra(
+            input_ids=None,
+            attention_mask=attention_mask.squeeze(1),
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
             head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
         )
 
-        return hidden_states
+
+        #return outputs
+
+
+config = ElectraConfig.from_pretrained('google/electra-small-discriminator', num_labels=1)   # 1 label for regression
+model = SpeakerAwareElectraModel.from_pretrained('google/electra-small-discriminator', config=config)
+tokenizer = ElectraTokenizer.from_pretrained('google/electra-small-discriminator')
+
+
+inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
+
+print(model(**inputs))
