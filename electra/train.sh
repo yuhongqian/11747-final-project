@@ -7,7 +7,7 @@
 #SBATCH --mail-type=END
 #SBATCH -p gpu
 #SBATCH --gres=gpu:1  # use 1 gpu
-
+#SBATCH --nodelist=boston-2-31
 source activate cast
 
 size="large"
@@ -24,4 +24,4 @@ python main.py  \
   --output_dir "${dataset}-numnet-largebs-electra-${size}-ckpts"  \
   --data_dir "../MuTual/data/${dataset}" \
   --eval_steps 500  \
-  --numnet_model "/bos/usr0/hongqiay/numnet_plus/numnet_pmlus_345_LR_5e-4_BLR_1.5e-5_WD_5e-5_BWD_0.01tag_mspan/checkpoint_best.pt"
+  --numnet_model "/bos/usr0/hongqiay/numnet_plus/numnet_plus_345_LR_5e-4_BLR_1.5e-5_WD_5e-5_BWD_0.01tag_mspan/checkpoint_best.pt"

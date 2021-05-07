@@ -33,15 +33,27 @@ class Trainer:
             train_loss = 0
             for step, example in tqdm(enumerate(self.train_dataloader), desc="Train"):
                 # get outputs
-                input_ids, token_type_ids, attention_mask, labels = example
-                input_ids = input_ids.to(self.device)
-                token_type_ids = token_type_ids.to(self.device)
-                attention_mask = attention_mask.to(self.device)
-                labels = labels.to(self.device)
-                outputs = self.model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
-                logits = outputs.logits
-                scores = F.sigmoid(logits)
-                loss = self.criterion(scores, labels)
+                if self.args.constrasitve:
+                    pos_input_ids, pos_token_type_ids, pos_attention_mask, neg_input_ids, neg_token_type_ids, \
+                    neg_attention_mask = example
+                    pos_input_ids = pos_input_ids.to(self.device)
+                    pos_token_type_ids = pos_token_type_ids.to(self.device)
+                    pos_attention_mask = pos_attention_mask.to(self.device)
+                    neg_input_ids = neg_input_ids.to(self.device)
+                    neg_token_type_ids = neg_token_type_ids.to(self.device)
+                    neg_attention_mask = neg_attention_mask.to(self.device)
+                    loss = self.model(pos_input_ids, pos_token_type_ids, pos_attention_mask,
+                                      neg_input_ids, neg_token_type_ids, neg_attention_mask)
+                else:
+                    input_ids, token_type_ids, attention_mask, labels = example
+                    input_ids = input_ids.to(self.device)
+                    token_type_ids = token_type_ids.to(self.device)
+                    attention_mask = attention_mask.to(self.device)
+                    labels = labels.to(self.device)
+                    outputs = self.model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
+                    logits = outputs.logits
+                    scores = F.sigmoid(logits)
+                    loss = self.criterion(scores, labels)
 
                 # back prop & update variables
                 if self.args.grad_accumulation_steps > 1:

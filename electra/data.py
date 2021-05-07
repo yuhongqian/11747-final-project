@@ -27,6 +27,64 @@ def convert_dir_to_json(mode_dir, json_path):
     return raw_data
 
 
+class ContrastiveDataset(Dataset):
+    def __init__(self, data_dir, mode, tokenizer):
+        if mode not in {"train", "dev", "test"}:
+            raise ValueError("Incorrect dataset mode.")
+
+        self.mode = mode
+        self.mode_dir = os.path.join(data_dir, mode)
+        self.tokenizer = tokenizer
+        self.data = self.load_data()
+
+    def load_data(self):
+        mode_dir, mode, tokenizer = self.mode_dir, self.mode, self.tokenizer
+        tokenized_file = os.path.join(mode_dir, f"{mode}.contrast.tokenized.pkl")
+        if not os.path.exists(tokenized_file):
+            json_file = os.path.join(mode_dir, f"{mode}.json")
+            if not os.path.exists(json_file):
+                raw_data = convert_dir_to_json(mode_dir, json_file)
+            else:
+                with open(json_file, "r") as f:
+                    raw_data = json.load(f)
+            return self.get_tokenized_data(raw_data, tokenized_file)
+        else:
+            with open(tokenized_file, "rb") as f:
+                return pickle.load(f)
+
+    def get_tokenized_data(self, raw_data, tokenized_file):
+        tokenizer, mode = self.tokenizer, self.mode
+        tokenized_data = []
+        for data_id, raw_example in raw_data.items():
+            answer = ANSWER_IDX[raw_example["answers"]]
+            positive = raw_example["options"][answer]
+            for idx, option in raw_example["options"]:
+                if idx == answer:
+                    continue
+                curr_example = dict()
+                curr_example["id"] = raw_example["id"]
+                # positive example
+                curr_example["positive"] = positive
+                pos_tokenized = tokenizer(text=raw_example["article"], text_pair=positive, padding="max_length",
+                                          truncation="only_first", max_length=512, return_tensors="pt")
+                curr_example["pos_input_ids"] = pos_tokenized["input_ids"]
+                curr_example["pos_token_type_ids"] = pos_tokenized["token_type_ids"]
+                curr_example["pos_attention_mask"] = pos_tokenized["attention_mask"]
+                # negative example
+                curr_example["negative"] = option
+                neg_tokenized = tokenizer(text=raw_example["article"], text_pair=option, padding="max_length",
+                                   truncation="only_first", max_length=512, return_tensors="pt")
+                curr_example["neg_input_ids"] = neg_tokenized["input_ids"]
+                curr_example["neg_token_type_ids"] = neg_tokenized["token_type_ids"]
+                curr_example["neg_attention_mask"] = neg_tokenized["attention_mask"]
+                if idx == answer:
+                    continue
+                tokenized_data.append(curr_example)
+        with open(tokenized_file, "wb") as f:
+            pickle.dump(tokenized_data, f)
+        return tokenized_data
+
+
 class MutualDataset(Dataset):
     def __init__(self, data_dir, mode, tokenizer):
         if mode not in {"train", "dev", "test"}:
@@ -92,6 +150,16 @@ def mutual_collate(batch):
     labels = torch.stack([example["label"] for example in batch]).unsqueeze(dim=1) \
         if batch[0]["label"] is not None else None
     return input_ids, token_type_ids, attention_mask, labels
+
+
+def mutual_contrast_collate(batch):
+    pos_input_ids = torch.stack([example["pos_input_ids"] for example in batch]).squeeze()
+    pos_token_type_ids = torch.stack([example["pos_token_type_ids"] for example in batch]).squeeze()
+    pos_attention_mask = torch.stack([example["pos_attention_mask"] for example in batch]).squeeze()
+    neg_input_ids = torch.stack([example["neg_input_ids"] for example in batch]).squeeze()
+    neg_token_type_ids = torch.stack([example["neg_token_type_ids"] for example in batch]).squeeze()
+    neg_attention_mask = torch.stack([example["neg_attention_mask"] for example in batch]).squeeze()
+    return pos_input_ids, pos_token_type_ids, pos_attention_mask, neg_input_ids, neg_token_type_ids, neg_attention_mask
 
 
 class DapoDataset(Dataset):

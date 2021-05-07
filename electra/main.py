@@ -4,11 +4,11 @@ import random
 import logging
 import numpy as np
 import argparse
-from data import MutualDataset, mutual_collate, DapoDataset, dapo_collate
+from data import MutualDataset, mutual_collate, DapoDataset, dapo_collate, ContrastiveDataset, mutual_contrast_collate
 from torch.utils.data import DataLoader
 from runner import Trainer, Tester
 from transformers import BertConfig, BertForSequenceClassification, ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification
-
+from model import ContrastiveElectra
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -30,6 +30,7 @@ def parse_args():
     parser.add_argument("--output_dir", default="ckpts")
     parser.add_argument("--local_model_path", default=None, type=str)
     parser.add_argument("--numnet_model", default=None, type=str)
+    parser.add_argument("--contrastive", action="store_true")
     return parser.parse_args()
 
 
@@ -45,20 +46,23 @@ def main():
     set_seed(args.seed)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s :: %(levelname)s :: %(message)s')
 
+
     config = ElectraConfig.from_pretrained(args.model_name, num_labels=1)   # 1 label for regression
     model = ElectraForSequenceClassification.from_pretrained(args.model_name, config=config)
 
     if args.numnet_model is not None:
         config = BertConfig.from_pretrained(args.model_name, num_labels=1)  # 1 label for regression
-        model = BertForSequenceClassification.from_pretrained(args.model_name, config=config)
+        if args.constrastive:
+            model = ContrastiveElectra.from_pretrained(args.model_name, config=config)
+        else:
+            model = BertForSequenceClassification.from_pretrained(args.model_name, config=config)
         state_dicts = torch.load(args.numnet_model)
         if "model" in state_dicts:
             logging.info("Loading in mutual electra format state_dicts.")
             model.load_state_dict(state_dicts["model"], strict=False)
         else:
             logging.info("Loading model weights only.")
-            model.load_state_dict(state_dicts)
-        model.load_state_dict(torch.load(args.numnet_model), strict=False)
+            model.load_state_dict(state_dicts, strict=False)
     elif args.local_model_path is not None:
         state_dicts = torch.load(args.local_model_path)
         model.load_state_dict(state_dicts["model"])
@@ -70,7 +74,19 @@ def main():
     # TODO enable multi-gpu training if necessary
     pretrain_train_dataset = DapoDataset(args.data_dir, "train", tokenizer) if args.pretrain else None
     pretrain_dev_dataset = DapoDataset(args.data_dir, "dev", tokenizer) if args.pretrain else None
-    train_dataset = MutualDataset(args.data_dir, "train", tokenizer) if args.train else None
+
+    if args.train:
+        if args.contrastive:
+            train_dataset = ContrastiveDataset(args.data_dir, "train", tokenizer)
+            train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=False, num_workers=8,
+                                          collate_fn=mutual_contrast_collate)
+        else:
+            train_dataset = MutualDataset(args.data_dir, "train", tokenizer)
+            train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True, num_workers=8,
+                                          collate_fn=mutual_collate)
+    else:
+        train_dataset, train_dataloader = None, None
+
     dev_dataset = MutualDataset(args.data_dir, "dev", tokenizer) if args.eval or args.test else None
     # TODO: add test_dataset if we want to submit to leaderboard
 
@@ -80,8 +96,7 @@ def main():
     pretrain_dev_dataloader = DataLoader(pretrain_dev_dataset, batch_size=args.train_batch_size,
                                            shuffle=False, num_workers=8,
                                            collate_fn=dapo_collate) if pretrain_dev_dataset is not None else None
-    train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True, num_workers=8,
-                                  collate_fn=mutual_collate) if train_dataset is not None else None
+
     # currently eval_batch_size = train_batch_size
     dev_dataloader = DataLoader(dev_dataset, batch_size=args.train_batch_size, shuffle=False, num_workers=8,
                                 collate_fn=mutual_collate) if dev_dataset is not None else None
@@ -103,8 +118,6 @@ def main():
         logging.info("Start testing...")
         tester = Tester(args, model, device, dev_dataset, dev_dataloader)
         tester.test()
-
-
 
 if __name__ == '__main__':
     main()
