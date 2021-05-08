@@ -7,7 +7,6 @@
 #SBATCH --mail-type=END
 #SBATCH -p gpu
 #SBATCH --gres=gpu:1  # use 1 gpu
-#SBATCH --nodelist=boston-2-31
 source activate cast
 
 size="large"
@@ -18,10 +17,11 @@ model_name="bert-large-uncased"
 python main.py  \
   --train  \
   --eval   \
-  --train_batch_size 2  \
+  --train_batch_size 1  \
   --grad_accumulation_steps 64  \
   --model_name ${model_name}  \
-  --output_dir "${dataset}-numnet-largebs-electra-${size}-ckpts"  \
+  --output_dir "${dataset}-numnet-contrast-electra-${size}-ckpts"  \
   --data_dir "../MuTual/data/${dataset}" \
   --eval_steps 500  \
-  --numnet_model "/bos/usr0/hongqiay/numnet_plus/numnet_plus_345_LR_5e-4_BLR_1.5e-5_WD_5e-5_BWD_0.01tag_mspan/checkpoint_best.pt"
+  --numnet_model "/bos/usr0/hongqiay/numnet_plus/numnet_plus_345_LR_5e-4_BLR_1.5e-5_WD_5e-5_BWD_0.01tag_mspan/checkpoint_best.pt" \
+  --contrastive

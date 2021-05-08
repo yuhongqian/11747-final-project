@@ -33,17 +33,37 @@ class Trainer:
             train_loss = 0
             for step, example in tqdm(enumerate(self.train_dataloader), desc="Train"):
                 # get outputs
-                if self.args.constrasitve:
+                if self.args.contrastive:
                     pos_input_ids, pos_token_type_ids, pos_attention_mask, neg_input_ids, neg_token_type_ids, \
                     neg_attention_mask = example
+                    if self.args.train_batch_size == 1:
+                        pos_input_ids = pos_input_ids.unsqueeze(0)
+                        pos_token_type_ids = pos_token_type_ids.unsqueeze(0)
+                        pos_attention_mask = pos_attention_mask.unsqueeze(0)
+                        neg_input_ids = neg_input_ids.unsqueeze(0)
+                        neg_token_type_ids = neg_token_type_ids.unsqueeze(0)
+                        neg_attention_mask = neg_attention_mask.unsqueeze(0)
                     pos_input_ids = pos_input_ids.to(self.device)
                     pos_token_type_ids = pos_token_type_ids.to(self.device)
                     pos_attention_mask = pos_attention_mask.to(self.device)
+
+                    # logging.info(f"{pos_input_ids.shape} {pos_token_type_ids.shape}, {pos_attention_mask.shape}")
+                    pos_logits = self.model(input_ids=pos_input_ids, token_type_ids=pos_token_type_ids,
+                                            attention_mask=pos_attention_mask).logits
+                    del pos_input_ids, pos_token_type_ids, pos_attention_mask
+                    torch.cuda.empty_cache()
+
                     neg_input_ids = neg_input_ids.to(self.device)
                     neg_token_type_ids = neg_token_type_ids.to(self.device)
                     neg_attention_mask = neg_attention_mask.to(self.device)
-                    loss = self.model(pos_input_ids, pos_token_type_ids, pos_attention_mask,
-                                      neg_input_ids, neg_token_type_ids, neg_attention_mask)
+                    neg_logits = self.model(input_ids=neg_input_ids, token_type_ids=neg_token_type_ids,
+                                            attention_mask=neg_attention_mask).logits
+                    del neg_input_ids, neg_token_type_ids, neg_attention_mask
+                    torch.cuda.empty_cache()
+
+                    logit_matrix = torch.cat([pos_logits, neg_logits], dim=1)
+                    lsm = F.log_softmax(logit_matrix, dim=1)
+                    loss = -1.0 * lsm[:, 0].mean()
                 else:
                     input_ids, token_type_ids, attention_mask, labels = example
                     input_ids = input_ids.to(self.device)
@@ -54,7 +74,8 @@ class Trainer:
                     logits = outputs.logits
                     scores = F.sigmoid(logits)
                     loss = self.criterion(scores, labels)
-
+                    del input_ids, token_type_ids, attention_mask, labels
+                    torch.cuda.empty_cache()
                 # back prop & update variables
                 if self.args.grad_accumulation_steps > 1:
                     loss = loss / self.args.grad_accumulation_steps
@@ -65,11 +86,9 @@ class Trainer:
                     optimizer.zero_grad()
                 train_loss += loss.item()
                 global_step += 1
-                del input_ids, token_type_ids, attention_mask, labels
-                torch.cuda.empty_cache()
 
                 # do eval
-                if self.args.eval and step % self.args.eval_steps == 0 or step == len(self.train_dataloader):
+                if self.args.eval and (step + 1) % self.args.eval_steps == 0 or step == len(self.train_dataloader):
                 # if self.args.eval and (step + 1) % self.args.eval_steps == 0 or step == len(self.train_dataloader):
                     eval_loss = self.eval()
                     train_loss /= self.args.eval_steps
@@ -99,22 +118,51 @@ class Trainer:
         num_batches = 0
         with torch.no_grad():
             for step, example in tqdm(enumerate(self.dev_dataloader), desc="Eval"):
-                input_ids, token_type_ids, attention_mask, labels = example
-                input_ids = input_ids.to(self.device)
-                token_type_ids = token_type_ids.to(self.device)
-                attention_mask = attention_mask.to(self.device)
-                labels = labels.to(self.device)
-                outputs = self.model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
-                logits = outputs.logits
-                scores = F.sigmoid(logits)
-                if step <= 5:
-                    logging.info(f"batch {step} labels = {labels}")
-                    logging.info(f"batch {step} scores = {scores}")
-                loss = self.criterion(scores, labels)
+                if self.args.contrastive:
+                    pos_input_ids, pos_token_type_ids, pos_attention_mask, neg_input_ids, neg_token_type_ids, \
+                    neg_attention_mask = example
+                    if self.args.train_batch_size == 1:
+                        pos_input_ids = pos_input_ids.unsqueeze(0)
+                        pos_token_type_ids = pos_token_type_ids.unsqueeze(0)
+                        pos_attention_mask = pos_attention_mask.unsqueeze(0)
+                        neg_input_ids = neg_input_ids.unsqueeze(0)
+                        neg_token_type_ids = neg_token_type_ids.unsqueeze(0)
+                        neg_attention_mask = neg_attention_mask.unsqueeze(0)
+
+                    pos_input_ids = pos_input_ids.to(self.device)
+                    pos_token_type_ids = pos_token_type_ids.to(self.device)
+                    pos_attention_mask = pos_attention_mask.to(self.device)
+                    pos_logits = self.model(input_ids=pos_input_ids, token_type_ids=pos_token_type_ids,
+                                                   attention_mask=pos_attention_mask).logits
+                    del pos_input_ids, pos_token_type_ids, pos_attention_mask
+                    torch.cuda.empty_cache()
+
+                    neg_input_ids = neg_input_ids.to(self.device)
+                    neg_token_type_ids = neg_token_type_ids.to(self.device)
+                    neg_attention_mask = neg_attention_mask.to(self.device)
+                    neg_logits = self.model(input_ids=neg_input_ids, token_type_ids=neg_token_type_ids,
+                                                   attention_mask=neg_attention_mask).logits
+                    del neg_input_ids, neg_token_type_ids, neg_attention_mask
+                    torch.cuda.empty_cache()
+
+                    logit_matrix = torch.cat([pos_logits, neg_logits], dim=1)
+                    lsm = F.log_softmax(logit_matrix, dim=1)
+                    loss = -1.0 * lsm[:, 0].mean()
+                else:
+                    input_ids, token_type_ids, attention_mask, labels = example
+                    input_ids = input_ids.to(self.device)
+                    token_type_ids = token_type_ids.to(self.device)
+                    attention_mask = attention_mask.to(self.device)
+                    labels = labels.to(self.device)
+                    outputs = self.model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
+                    logits = outputs.logits
+                    scores = F.sigmoid(logits)
+                    loss = self.criterion(scores, labels)
+                    del input_ids, token_type_ids, attention_mask, labels
+                    torch.cuda.empty_cache()
+
                 eval_loss += loss.item()
                 num_batches += 1
-                del input_ids, token_type_ids, attention_mask, labels
-                torch.cuda.empty_cache()
         return eval_loss / len(self.dev_dataloader)
 
 
@@ -137,7 +185,8 @@ class Tester:
                 attention_mask = attention_mask.to(self.device)
                 outputs = self.model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
                 logits = outputs.logits
-                scores = F.sigmoid(logits)
+                scores = logits
+                # scores = F.sigmoid(logits)
                 del input_ids, token_type_ids, attention_mask
                 torch.cuda.empty_cache()
                 all_scores.extend(list(scores.detach().cpu().numpy()))     # TODO: change to np?

@@ -10,6 +10,7 @@ from runner import Trainer, Tester
 from transformers import BertConfig, BertForSequenceClassification, ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification
 from model import ContrastiveElectra
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", default="../MuTual/data/mutual")
@@ -46,16 +47,12 @@ def main():
     set_seed(args.seed)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s :: %(levelname)s :: %(message)s')
 
-
-    config = ElectraConfig.from_pretrained(args.model_name, num_labels=1)   # 1 label for regression
-    model = ElectraForSequenceClassification.from_pretrained(args.model_name, config=config)
-
     if args.numnet_model is not None:
         config = BertConfig.from_pretrained(args.model_name, num_labels=1)  # 1 label for regression
-        if args.constrastive:
-            model = ContrastiveElectra.from_pretrained(args.model_name, config=config)
-        else:
-            model = BertForSequenceClassification.from_pretrained(args.model_name, config=config)
+        # if args.contrastive:
+        #     model = ContrastiveElectra.from_pretrained(args.model_name, config=config)
+        # else:
+        model = BertForSequenceClassification.from_pretrained(args.model_name, config=config)
         state_dicts = torch.load(args.numnet_model)
         if "model" in state_dicts:
             logging.info("Loading in mutual electra format state_dicts.")
@@ -63,9 +60,12 @@ def main():
         else:
             logging.info("Loading model weights only.")
             model.load_state_dict(state_dicts, strict=False)
-    elif args.local_model_path is not None:
-        state_dicts = torch.load(args.local_model_path)
-        model.load_state_dict(state_dicts["model"])
+    else:
+        config = ElectraConfig.from_pretrained(args.model_name, num_labels=1)  # 1 label for regression
+        model = ElectraForSequenceClassification.from_pretrained(args.model_name, config=config)
+        if args.local_model_path is not None:
+            state_dicts = torch.load(args.local_model_path)
+            model.load_state_dict(state_dicts["model"])
 
     tokenizer = ElectraTokenizer.from_pretrained(args.model_name, do_lower_case=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -80,14 +80,20 @@ def main():
             train_dataset = ContrastiveDataset(args.data_dir, "train", tokenizer)
             train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=False, num_workers=8,
                                           collate_fn=mutual_contrast_collate)
+            dev_dataset = ContrastiveDataset(args.data_dir, "dev", tokenizer) if args.eval or args.test else None
+            dev_dataloader = DataLoader(dev_dataset, batch_size=args.train_batch_size, shuffle=False, num_workers=8,
+                                        collate_fn=mutual_contrast_collate) if dev_dataset is not None else None
         else:
             train_dataset = MutualDataset(args.data_dir, "train", tokenizer)
             train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True, num_workers=8,
                                           collate_fn=mutual_collate)
+            dev_dataset = MutualDataset(args.data_dir, "dev", tokenizer) if args.eval or args.test else None
+            dev_dataloader = DataLoader(dev_dataset, batch_size=args.train_batch_size, shuffle=False, num_workers=8,
+                                        collate_fn=mutual_collate) if dev_dataset is not None else None
+
     else:
         train_dataset, train_dataloader = None, None
 
-    dev_dataset = MutualDataset(args.data_dir, "dev", tokenizer) if args.eval or args.test else None
     # TODO: add test_dataset if we want to submit to leaderboard
 
     pretrain_train_dataloader = DataLoader(pretrain_train_dataset, batch_size=args.train_batch_size,
@@ -98,8 +104,6 @@ def main():
                                            collate_fn=dapo_collate) if pretrain_dev_dataset is not None else None
 
     # currently eval_batch_size = train_batch_size
-    dev_dataloader = DataLoader(dev_dataset, batch_size=args.train_batch_size, shuffle=False, num_workers=8,
-                                collate_fn=mutual_collate) if dev_dataset is not None else None
 
     if args.pretrain:
         logging.info("Start pretraining...")
