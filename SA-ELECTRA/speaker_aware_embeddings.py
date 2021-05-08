@@ -7,6 +7,7 @@ import argparse
 from torch import nn  
 from torch.utils.data import DataLoader
 from transformers import ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification, ElectraPreTrainedModel, ElectraModel
+from torch.nn import CrossEntropyLoss, MSELoss
 
 
 class SpeakerAwareElectraEmbeddings(nn.Module):
@@ -74,6 +75,8 @@ class SpeakerAwareElectraModelForSequenceClassification(ElectraPreTrainedModel):
         self.num_speakers = num_speakers
         self.electra      = ElectraModel(config)
         self.embeddings   = SpeakerAwareElectraEmbeddings(config, self.num_speakers)
+        self.num_labels   = config.num_labels
+
 
         self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
         self.pooler_activation = nn.Tanh()
@@ -97,21 +100,22 @@ class SpeakerAwareElectraModelForSequenceClassification(ElectraPreTrainedModel):
         output_hidden_states=None,
         labels=None,
     ):
-        num_labels = input_ids.shape[1] if input_ids is not None else inputs_embeds.shape[1]
 
+        num_labels = self.num_labels
+        
         input_ids = input_ids.view(-1, input_ids.size(-1)) if input_ids is not None else None 
         attention_mask = attention_mask.view(-1, attention_mask.size(-1)) if attention_mask is not None else None
         # (batch_size * choice, seq_len)
         token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1)) if token_type_ids is not None else None
-        sep_pos = sep_pos.view(-1, sep_pos.size(-1)) if sep_pos is not None else None
         
         # INCLUDE SPEAKER IDS HERE
+       
         speaker_ids = speaker_ids.view(-1, speaker_ids.size(-1)) if speaker_ids is not None else None
-        speaker_ids = speaker_ids.unsqueeze(-1).repeat([1,1,speaker_ids.size(1)]) if speaker_ids is not None else None
-        
-        position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
-        inputs_embeds = self.embeddings(input_ids=input_ids, token_type_ids=token_type_ids, position_ids=position_ids, speaker_ids=speaker_ids)  # create own embeddings
 
+        position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
+      
+        inputs_embeds = self.embeddings(input_ids=input_ids, token_type_ids=token_type_ids, position_ids=position_ids, speaker_ids=speaker_ids)  # create own embeddings
+        
         attention_mask = attention_mask.unsqueeze(1).unsqueeze(2) # (batch_size * num_choice, 1, 1, seq_len)
         attention_mask = attention_mask.to(dtype=self.dtype)  # fp16 compatibility
 
@@ -127,7 +131,7 @@ class SpeakerAwareElectraModelForSequenceClassification(ElectraPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
         )
-
+        
         sequence_output = outputs[0] # (batch_size * num_choice, seq_len, hidden_size)
 
         pooled_output = self.pooler_activation(self.pooler(sequence_output[:,0]))
@@ -143,13 +147,12 @@ class SpeakerAwareElectraModelForSequenceClassification(ElectraPreTrainedModel):
         outputs = (reshaped_logits,) + outputs[2:]  # add hidden states and attention if they are here
 
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
+            if num_labels > 2:
+                loss_fct = CrossEntropyLoss()
+            else:
+                loss_fct = MSELoss()
             loss = loss_fct(reshaped_logits, labels)
             outputs = (loss,) + outputs
 
         return outputs 
-
-
-
-config = ElectraConfig.from_pretrained('google/electra-small-discriminator', num_labels=1)   # 1 label for regression
-model = SpeakerAwareElectraModelForSequenceClassification.from_pretrained('google/electra-small-discriminator', config=config)
+        
