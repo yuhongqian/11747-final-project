@@ -7,7 +7,6 @@ import argparse
 from torch import nn  
 from torch.utils.data import DataLoader
 from transformers import ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification, ElectraPreTrainedModel, ElectraModel
-from data import MutualDataset
 from transformers import ElectraTokenizer, ElectraModel
 import torch
 import torch
@@ -17,30 +16,12 @@ from torch.utils.data import Dataset
 import pickle
 import pdb
 
-
-def add_eo_tokens(string):
-
-        def find(s, ch):
-            return [i for i, ltr in enumerate(s) if ltr == ch]
-        z = string
-        f = find(z, ':')
-        new_str = ''
-        for i in range(len(f)):
-        
-            if i != len(f) - 1:
-                new_str = new_str + z[:find(z, ':')[i+1] - 2] + " " + '[EOU]' + " " + '[EOT] '
-            else:
-                new_str = new_str + z[f[i] - 2:] + " " + " " + '[EOU]' + " " + '[EOT] '
-
-        return new_str
-
-
 def get_speaker_ids(dialog, tokenizer, options): 
 
     z = dialog 
-    inputs = tokenizer(text=add_eo_tokens(z), text_pair=options, padding="max_length",
-                                      truncation="only_first", max_length=512, return_tensors="pt")
-
+   
+    inputs = tokenizer(text=z, text_pair=options, padding="max_length",
+                                     truncation="only_first", max_length=512, return_tensors="pt")
     # 30522, 30523
     
     speaker_ids = torch.zeros(inputs['input_ids'].shape, dtype=torch.long)
@@ -50,36 +31,42 @@ def get_speaker_ids(dialog, tokenizer, options):
     for i in inputs['input_ids'][0,:]:
 
         if inputs['attention_mask'][0,ind].item() == 1:
-            if i.item == 102: reached_last_token = True
-            
-            if reached_last_token == False:
-                if i.item() == 30523: 
-                    speaker_ids[0,ind] = turn
-                    if turn == 0: turn = 1
-                    else: turn = 0
-                else:
+            if i.item() == 1024 and inputs['input_ids'][0,ind - 2] != 101: 
+                if turn == 0: 
+                    turn = 1
+                else: 
+                    turn = 0
+                
+                speaker_ids[0,ind] = turn
+                speaker_ids[0,ind-1] = turn
 
-                    speaker_ids[0,ind] = turn
+            if i.item() == 102 and reached_last_token == False:
+                if turn == 0: 
+                    turn = 1
+                else: 
+                    turn = 0
+                speaker_ids[0,ind] = turn
+
+                reached_last_token = True
+            
             else:
-                speaker_ids[0,-1] = speaker_ids[0,-2]
-                last_speaker = speaker_ids[0,-1]
-                speaker_ids[0, ind] = last_speaker
+                speaker_ids[0,ind] = turn
         
-        else:
-            speaker_ids[0, ind] = 0
-        ind += 1
+            ind += 1
 
     inputs['speaker_ids'] = speaker_ids
     return inputs
-    
-    
+
+
+config = ElectraConfig.from_pretrained("google/electra-small-discriminator", num_labels=1)   # 1 label for regression
+tokenizer = ElectraTokenizer.from_pretrained("google/electra-small-discriminator", do_lower_case=True) 
+
 ANSWER_IDX = {
     "A": 0,
     "B": 1,
     "C": 2,
     "D": 3
 }
-
 
 def convert_dir_to_json(mode_dir, json_path):
     raw_data = dict()   # "id" -> raw_data
@@ -156,3 +143,16 @@ class MutualDataset(Dataset):
         with open(tokenized_file, "wb") as f:
             pickle.dump(tokenized_data, f)
         return tokenized_data
+
+def mutual_collate(batch):
+    input_ids = torch.stack([example["input_ids"] for example in batch]).squeeze()
+    token_type_ids = torch.stack([example["token_type_ids"] for example in batch]).squeeze()
+    attention_mask = torch.stack([example["attention_mask"] for example in batch]).squeeze()
+    speaker_ids    = torch.stack([example['speaker_ids'] for example in batch]).squeeze()
+    labels = torch.stack([example["label"] for example in batch]).unsqueeze(dim=1) \
+        if batch[0]["label"] is not None else None
+    return input_ids, token_type_ids, attention_mask, speaker_ids, labels
+
+
+dat1 = MutualDataset('mutual/', 'train', tokenizer)
+dat2 = MutualDataset('mutual/', 'dev', tokenizer)

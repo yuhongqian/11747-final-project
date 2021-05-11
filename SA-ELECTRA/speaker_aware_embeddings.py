@@ -8,7 +8,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from transformers import ElectraConfig, ElectraTokenizer, ElectraForSequenceClassification, ElectraPreTrainedModel, ElectraModel
 from torch.nn import CrossEntropyLoss, MSELoss
-
+#from transformers import ElectraEmbeddings
 
 class SpeakerAwareElectraEmbeddings(nn.Module):
     """Construct the embeddings from word, position, token_type embeddings, and speaker positions."""
@@ -18,6 +18,7 @@ class SpeakerAwareElectraEmbeddings(nn.Module):
 
         self.num_speakers = num_speakers
 
+        print(config)
         self.word_embeddings = nn.Embedding(config.vocab_size, config.embedding_size, padding_idx=config.pad_token_id)
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.embedding_size)
         self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.embedding_size)
@@ -68,23 +69,21 @@ class SpeakerAwareElectraEmbeddings(nn.Module):
         embeddings = self.dropout(embeddings)
         return embeddings
 
+
 class SpeakerAwareElectraModelForSequenceClassification(ElectraPreTrainedModel):
-    def __init__(self, config, num_speakers=2):
+    def __init__(self, model_name, config, num_speakers=2):
         super().__init__(config)
 
         self.num_speakers = num_speakers
-        self.electra      = ElectraModel(config)
+        self.electra      = ElectraModel.from_pretrained(model_name)
         self.embeddings   = SpeakerAwareElectraEmbeddings(config, self.num_speakers)
         self.num_labels   = config.num_labels
 
-
-        self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
-        self.pooler_activation = nn.Tanh()
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.regression_output = nn.Linear(config.hidden_size, 1)
-        self.classification = nn.Linear(config.hidden_size, 2)
-
-
+        self.dense        = nn.Linear(config.hidden_size, config.hidden_size)
+        self.dropout      = nn.Dropout(config.hidden_dropout_prob)
+        self.out_proj     = nn.Linear(config.hidden_size, self.num_labels)
+        
+        self.gelu = nn.GELU()
         self.init_weights()
 
     def forward(
@@ -101,29 +100,11 @@ class SpeakerAwareElectraModelForSequenceClassification(ElectraPreTrainedModel):
         labels=None,
     ):
 
-        num_labels = self.num_labels
-        
-        input_ids = input_ids.view(-1, input_ids.size(-1)) if input_ids is not None else None 
-        attention_mask = attention_mask.view(-1, attention_mask.size(-1)) if attention_mask is not None else None
-        # (batch_size * choice, seq_len)
-        token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1)) if token_type_ids is not None else None
-        
-        # INCLUDE SPEAKER IDS HERE
-       
-        speaker_ids = speaker_ids.view(-1, speaker_ids.size(-1)) if speaker_ids is not None else None
-
-        position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
-      
         inputs_embeds = self.embeddings(input_ids=input_ids, token_type_ids=token_type_ids, position_ids=position_ids, speaker_ids=speaker_ids)  # create own embeddings
-        
-        attention_mask = attention_mask.unsqueeze(1).unsqueeze(2) # (batch_size * num_choice, 1, 1, seq_len)
-        attention_mask = attention_mask.to(dtype=self.dtype)  # fp16 compatibility
-
-        attention_mask = (1.0 - attention_mask) * -10000.0
 
         outputs = self.electra(
             input_ids=None,  # None since we will manually add our own embeddings. 
-            attention_mask=attention_mask.squeeze(1),
+            attention_mask=attention_mask,  #.squeeze(1),
             token_type_ids=token_type_ids,
             position_ids=position_ids,
             head_mask=head_mask,
@@ -133,26 +114,12 @@ class SpeakerAwareElectraModelForSequenceClassification(ElectraPreTrainedModel):
         )
         
         sequence_output = outputs[0] # (batch_size * num_choice, seq_len, hidden_size)
-
-        pooled_output = self.pooler_activation(self.pooler(sequence_output[:,0]))
-        pooled_output = self.dropout(pooled_output)
         
-        if num_labels > 2:
-            logits = self.classification(pooled_output)
-        else:
-            logits = self.regression_output(pooled_output)
+        x = sequence_output[:, 0, :]  # take <s> token (equiv. to [CLS])
+        x = self.dropout(x)
+        x = self.dense(x)
+        x = self.gelu(x)  # although BERT uses tanh here, it seems Electra authors used gelu here
+        x = self.dropout(x)
+        logits = self.out_proj(x)
 
-        reshaped_logits = logits.view(-1, num_labels) if num_labels > 2 else logits
-
-        outputs = (reshaped_logits,) + outputs[2:]  # add hidden states and attention if they are here
-
-        if labels is not None:
-            if num_labels > 2:
-                loss_fct = CrossEntropyLoss()
-            else:
-                loss_fct = MSELoss()
-            loss = loss_fct(reshaped_logits, labels)
-            outputs = (loss,) + outputs
-
-        return outputs 
-        
+        return logits
